@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Flip Mode",
+    "slug": "flipmode",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.flipmode.app",
+      "infoPlist": {
+        "NSSupportsLiveActivities": true,
+        "NSMotionUsageDescription": "Flip Mode uses device motion to detect when your phone is face-down."
+      }
+    },
+    "android": {
+      "package": "com.flipmode.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "permissions": [
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-sensors"
+    ]
+  }
+}

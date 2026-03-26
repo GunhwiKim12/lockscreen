@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"⚠️  CLAUDE.md 업데이트 필수: 방금 변경된 파일과 현재 구현 상태를 CLAUDE.md에 반영했는지 확인하세요.\"}'"
+          }
+        ]
+      }
+    ]
+  }
+}

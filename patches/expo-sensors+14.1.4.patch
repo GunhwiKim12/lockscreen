@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-sensors/ios/EXMotionPermissionRequester.m b/node_modules/expo-sensors/ios/EXMotionPermissionRequester.m
+index 7fe183e..2b11e83 100644
+--- a/node_modules/expo-sensors/ios/EXMotionPermissionRequester.m
++++ b/node_modules/expo-sensors/ios/EXMotionPermissionRequester.m
+@@ -2,7 +2,6 @@
+ 
+ #import <ExpoSensors/EXMotionPermissionRequester.h>
+ #import <CoreMotion/CoreMotion.h>
+-#import <ExpoModulesCore/EXDefines.h>
+ #import <ExpoModulesCore/EXUtilities.h>
+ 
+ @implementation EXMotionPermissionRequester
+@@ -20,8 +19,7 @@ - (NSDictionary *)getPermissions
+     NSString *motionUsageDescription = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"NSMotionUsageDescription"];
+     // Related: NSFallDetectionUsageDescription
+     if (!(motionUsageDescription)) {
+-      // TODO: Make aware of plugins, FYI link.
+-      EXFatal(EXErrorWithMessage(@"This app is missing the 'NSMotionUsageDescription' so CMPedometer services will fail. Ensure this key exist in the app's Info.plist."));
++      NSLog(@"[ExpoSensors] Warning: NSMotionUsageDescription missing. CMPedometer will be denied.");
+       status = EXPermissionStatusDenied;
+     } else {
+       switch ([CMPedometer authorizationStatus]) {
