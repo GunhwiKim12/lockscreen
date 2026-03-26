@@ -35,6 +35,10 @@ Do not implement:
 - DeviceMotion z-axis: `< -0.75` = face-down candidate, `> 0.75` = face-up candidate
 - sustainMs = 1500ms before state transition, cooldownMs = 2000ms between sessions
 - State machine: `idle → arming → active → cooldown → ended`
+- `sessionEndedAt`: face-up 감지 시점에 고정 → cooldown 시간은 집중 시간에서 제외
+- STOP_MONITORING 시 active/cooldown이면 END_SESSION 먼저 발화 → 세션 저장 보장
+- START_COOLDOWN에서 tick 즉시 중단 → "Wrapping up…" 덮어쓰기 방지
+- `resetSession`이 `isMonitoring=false`로 내려 Start 버튼 즉시 복구
 
 ## App behavior
 - User taps "Start Flip Mode" to arm detection
@@ -63,7 +67,7 @@ src/ui/FlipStatusCard.tsx                  phase label + timer display
 src/ui/SessionSummaryCard.tsx              session history row
 ```
 
-### RN/TS 브리지 레이어 — 완료
+### RN/TS 브리지 레이어 — 완료 (세션 lifecycle 버그 수정 포함)
 ```
 src/native/LockSurfaceBridge.ts
   - NativeModules.LockSurfaceBridge (iOS) / NativeModules.LockSurfaceModule (Android) 호출

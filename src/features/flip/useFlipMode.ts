@@ -49,8 +49,10 @@ export function useFlipMode(): UseFlipModeReturn {
     }
 
     if (state.phase === 'cooldown') {
-      // Freeze the displayed elapsed time — do not update further
       stopTick();
+      if (sessionStartRef.current && state.sessionEndedAt) {
+        setElapsedSecs(elapsedSeconds(sessionStartRef.current, state.sessionEndedAt));
+      }
     }
 
     if (state.phase === 'ended' && sessionStartRef.current) {

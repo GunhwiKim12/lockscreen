@@ -81,14 +81,18 @@ export class FlipService {
         break;
 
       case 'START_COOLDOWN':
-        // Stop tick immediately — session time is now frozen at sessionEndedAt
         this.clearTick();
-        this.lockSurface.update({ title: 'Wrapping up…' });
+        this.lockSurface.update({
+          title: 'Wrapping up…',
+          elapsedSeconds: this.getElapsedSeconds(next.sessionEndedAt),
+        });
         break;
 
       case 'RESUME_SESSION':
-        // Re-flip during cooldown: restart tick from original session start
-        this.lockSurface.update({ title: 'Focus active' });
+        this.lockSurface.update({
+          title: 'Focus active',
+          elapsedSeconds: this.getElapsedSeconds(),
+        });
         this.startTick();
         break;
 
@@ -107,10 +111,17 @@ export class FlipService {
   private startTick(): void {
     this.clearTick();
     this.tickInterval = setInterval(() => {
-      if (this.sessionStartMs === null) return;
-      const elapsed = Math.floor((nowMs() - this.sessionStartMs) / 1000);
-      this.lockSurface.update({ title: 'Focus active', elapsedSeconds: elapsed });
+      this.lockSurface.update({
+        title: 'Focus active',
+        elapsedSeconds: this.getElapsedSeconds(),
+      });
     }, 1000);
+  }
+
+  private getElapsedSeconds(endMs?: number | null): number {
+    if (this.sessionStartMs === null) return 0;
+    const finalMs = endMs ?? nowMs();
+    return Math.floor((finalMs - this.sessionStartMs) / 1000);
   }
 
   private clearTick(): void {
