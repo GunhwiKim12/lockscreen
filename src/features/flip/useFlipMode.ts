@@ -1,8 +1,3 @@
-/**
- * Primary hook that glues FlipService, FlipMachine state, and session history
- * together for consumption by the UI layer.
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FlipPhase, FlipSession } from '../../core/types';
 import { FlipMachineState } from './FlipMachine';
@@ -31,17 +26,16 @@ export function useFlipMode(): UseFlipModeReturn {
   const sessionStartRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load local history on mount
   useEffect(() => {
     loadSessions().then(setSessions);
   }, []);
 
-  const stopTick = () => {
+  const stopTick = useCallback(() => {
     if (tickRef.current) {
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
-  };
+  }, []);
 
   const handleStateChange = useCallback(async (state: FlipMachineState) => {
     setPhase(state.phase);
@@ -54,9 +48,15 @@ export function useFlipMode(): UseFlipModeReturn {
       }, 500);
     }
 
+    if (state.phase === 'cooldown') {
+      // Freeze the displayed elapsed time — do not update further
+      stopTick();
+    }
+
     if (state.phase === 'ended' && sessionStartRef.current) {
       stopTick();
-      const endedAt = nowMs();
+      // Use the locked sessionEndedAt (set when face-up detected, not now)
+      const endedAt = state.sessionEndedAt ?? nowMs();
       const session: FlipSession = {
         id: String(sessionStartRef.current),
         startedAt: sessionStartRef.current,
@@ -66,9 +66,9 @@ export function useFlipMode(): UseFlipModeReturn {
       sessionStartRef.current = null;
       const updated = await appendSession(session);
       setSessions(updated);
-      setElapsedSecs(0);
+      setElapsedSecs(session.elapsedSeconds); // show final time, not 0
     }
-  }, []);
+  }, [stopTick]);
 
   const startMonitoring = useCallback(() => {
     const surface = getLockSurface();
@@ -81,28 +81,29 @@ export function useFlipMode(): UseFlipModeReturn {
   }, [handleStateChange]);
 
   const stopMonitoring = useCallback(() => {
-    serviceRef.current?.stop();
+    serviceRef.current?.stop(); // fires END_SESSION if session was active
     serviceRef.current = null;
     stopTick();
     setIsMonitoring(false);
     setPhase('idle');
     setElapsedSecs(0);
-  }, []);
+  }, [stopTick]);
 
   const resetSession = useCallback(() => {
     serviceRef.current?.reset();
+    serviceRef.current = null;
     stopTick();
+    setIsMonitoring(false); // Fix: restore Start button
     setPhase('idle');
     setElapsedSecs(0);
-  }, []);
+  }, [stopTick]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       serviceRef.current?.stop();
       stopTick();
     };
-  }, []);
+  }, [stopTick]);
 
   return { phase, isMonitoring, elapsedSecs, sessions, startMonitoring, stopMonitoring, resetSession };
 }

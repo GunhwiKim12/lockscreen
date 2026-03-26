@@ -5,18 +5,18 @@
  *   idle      - waiting for user to arm flip detection
  *   arming    - face-down candidate detected, sustain timer running
  *   active    - face-down sustained; session is live
- *   cooldown  - face-up detected after active; waiting before returning to idle
+ *   cooldown  - face-up detected after active; session time LOCKED, waiting before ended
  *   ended     - session completed; terminal state until user restarts
  *
- * Transitions (simplified):
- *   idle     + startMonitoring          → arming (or idle if no reading yet)
- *   idle     + faceDownCandidate        → arming
- *   arming   + sustainedFaceDown        → active
- *   arming   + faceUpCandidate          → idle  (cancelled before activation)
- *   active   + faceUpCandidate          → cooldown
- *   cooldown + cooldownExpired          → ended
- *   cooldown + faceDownCandidate        → active (re-flip within cooldown)
- *   ended    + reset                    → idle
+ * Transitions:
+ *   idle     + faceDownCandidate    → arming
+ *   arming   + sustainedFaceDown    → active        (START_SESSION)
+ *   arming   + faceUpCandidate      → idle          (CANCEL_SUSTAIN)
+ *   active   + faceUpCandidate      → cooldown      (START_COOLDOWN) — sessionEndedAt locked here
+ *   cooldown + faceDownCandidate    → active        (RESUME_SESSION) — sessionEndedAt cleared
+ *   cooldown + cooldownExpired      → ended         (END_SESSION)
+ *   active/cooldown + STOP          → ended         (END_SESSION) → idle (silent)
+ *   ended    + RESET                → idle
  */
 
 import { FlipPhase, FlipReading, FlipThresholdConfig } from '../../core/types';
@@ -32,19 +32,28 @@ export type FlipMachineEvent =
 
 export type FlipMachineState = {
   phase: FlipPhase;
-  sustainStartedAt: number | null; // timestamp when sustain timer started
+  sustainStartedAt: number | null;
   sessionStartedAt: number | null;
+  /** Set when entering cooldown — this is the authoritative session end time. */
+  sessionEndedAt: number | null;
 };
 
 export type FlipMachineTransition = {
   nextState: FlipMachineState;
-  sideEffect?: 'START_SESSION' | 'END_SESSION' | 'CANCEL_SUSTAIN' | 'START_SUSTAIN' | 'START_COOLDOWN';
+  sideEffect?:
+    | 'START_SESSION'
+    | 'END_SESSION'
+    | 'RESUME_SESSION'
+    | 'START_COOLDOWN'
+    | 'CANCEL_SUSTAIN'
+    | 'START_SUSTAIN';
 };
 
 const INITIAL_STATE: FlipMachineState = {
   phase: 'idle',
   sustainStartedAt: null,
   sessionStartedAt: null,
+  sessionEndedAt: null,
 };
 
 export class FlipMachine {
@@ -75,15 +84,20 @@ export class FlipMachine {
 
     switch (event.type) {
       case 'START_MONITORING': {
-        if (phase === 'idle') {
-          // Stay in idle; readings will drive arming
-        }
+        // Stay in idle; readings drive arming
         break;
       }
 
       case 'STOP_MONITORING': {
         this.clearAllTimers();
-        this.transition({ phase: 'idle', sustainStartedAt: null, sessionStartedAt: null });
+        if (phase === 'active' || phase === 'cooldown') {
+          // Lock session end time if not already set (stopped while active)
+          const sessionEndedAt = this.state.sessionEndedAt ?? Date.now();
+          // Fire END_SESSION so observers can save the session
+          this.transition({ ...this.state, phase: 'ended', sessionEndedAt }, 'END_SESSION');
+        }
+        // Silently reset internal state (stopMonitoring in useFlipMode handles UI reset)
+        this.state = { ...INITIAL_STATE };
         break;
       }
 
@@ -94,9 +108,8 @@ export class FlipMachine {
 
       case 'SUSTAIN_TIMER_FIRED': {
         if (phase === 'arming') {
-          const sessionStartedAt = Date.now();
           this.transition(
-            { ...this.state, phase: 'active', sessionStartedAt },
+            { ...this.state, phase: 'active', sessionStartedAt: Date.now() },
             'START_SESSION',
           );
         }
@@ -129,24 +142,26 @@ export class FlipMachine {
 
     if (phase === 'arming') {
       if (reading.isFaceUpCandidate) {
-        // Cancelled before activation
         this.clearSustainTimer();
         this.transition({ ...this.state, phase: 'idle', sustainStartedAt: null }, 'CANCEL_SUSTAIN');
       }
-      // If still face-down: sustain timer is already running, no action needed
       return;
     }
 
     if (phase === 'active' && reading.isFaceUpCandidate) {
       this.startCooldownTimer();
-      this.transition({ ...this.state, phase: 'cooldown' }, 'START_COOLDOWN');
+      // Lock session end time at this exact moment
+      this.transition(
+        { ...this.state, phase: 'cooldown', sessionEndedAt: Date.now() },
+        'START_COOLDOWN',
+      );
       return;
     }
 
     if (phase === 'cooldown' && reading.isFaceDownCandidate) {
-      // Re-flip during cooldown: snap back to active
+      // Re-flip: resume session, clear the locked end time
       this.clearCooldownTimer();
-      this.transition({ ...this.state, phase: 'active' });
+      this.transition({ ...this.state, phase: 'active', sessionEndedAt: null }, 'RESUME_SESSION');
     }
   }
 

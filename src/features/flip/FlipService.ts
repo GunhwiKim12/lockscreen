@@ -2,17 +2,14 @@
  * FlipService: wires DeviceMotion sensor → FlipMachine → LockSurface bridge.
  *
  * IMPORTANT background limitations:
- * - DeviceMotion will only deliver readings while the app is in the foreground
- *   or very recently backgrounded. There is no reliable way in Expo / RN to
- *   keep the sensor alive when the OS suspends the JS thread.
- * - This MVP is designed for foreground-first usage.
- * - When the app goes to background after session starts, the lock-screen
- *   surface continues (native) but sensor tracking may pause.
+ * - DeviceMotion only delivers readings while the app is in the foreground
+ *   or very recently backgrounded. No reliable background sensor in Expo/RN.
+ * - MVP is foreground-first. Lock-screen surface (native) persists after
+ *   backgrounding, but the JS timer pauses.
  */
 
 import { DeviceMotion, DeviceMotionMeasurement } from 'expo-sensors';
-import { FlipMachine, FlipMachineTransition } from './FlipMachine';
-import { FlipMachineState } from './FlipMachine';
+import { FlipMachine, FlipMachineState, FlipMachineTransition } from './FlipMachine';
 import { FlipReading, FlipThresholdConfig } from '../../core/types';
 import { DEFAULT_THRESHOLDS } from './flipThresholds';
 import { ILockSurface } from '../../core/lockSurface';
@@ -29,7 +26,11 @@ export class FlipService {
   private sessionStartMs: number | null = null;
   private tickInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(lockSurface: ILockSurface, onStateChange: FlipServiceCallback, config = DEFAULT_THRESHOLDS) {
+  constructor(
+    lockSurface: ILockSurface,
+    onStateChange: FlipServiceCallback,
+    config = DEFAULT_THRESHOLDS,
+  ) {
     this.config = config;
     this.lockSurface = lockSurface;
     this.onStateChange = onStateChange;
@@ -37,7 +38,7 @@ export class FlipService {
   }
 
   start(): void {
-    DeviceMotion.setUpdateInterval(300); // poll every 300ms
+    DeviceMotion.setUpdateInterval(300);
     this.subscription = DeviceMotion.addListener(this.handleMotion.bind(this));
     this.machine.send({ type: 'START_MONITORING' });
   }
@@ -45,8 +46,9 @@ export class FlipService {
   stop(): void {
     this.subscription?.remove();
     this.subscription = null;
-    this.clearTick();
+    // If a session is active, STOP_MONITORING fires END_SESSION side effect first
     this.machine.send({ type: 'STOP_MONITORING' });
+    this.clearTick();
   }
 
   reset(): void {
@@ -78,19 +80,26 @@ export class FlipService {
         this.startTick();
         break;
 
+      case 'START_COOLDOWN':
+        // Stop tick immediately — session time is now frozen at sessionEndedAt
+        this.clearTick();
+        this.lockSurface.update({ title: 'Wrapping up…' });
+        break;
+
+      case 'RESUME_SESSION':
+        // Re-flip during cooldown: restart tick from original session start
+        this.lockSurface.update({ title: 'Focus active' });
+        this.startTick();
+        break;
+
       case 'END_SESSION':
         this.clearTick();
         this.lockSurface.end();
-        break;
-
-      case 'START_COOLDOWN':
-        // Keep surface alive with "Wrapping up..." message
-        this.lockSurface.update({ title: 'Wrapping up…' });
+        this.sessionStartMs = null;
         break;
 
       case 'CANCEL_SUSTAIN':
       case 'START_SUSTAIN':
-        // No lock surface action needed
         break;
     }
   }
@@ -100,10 +109,7 @@ export class FlipService {
     this.tickInterval = setInterval(() => {
       if (this.sessionStartMs === null) return;
       const elapsed = Math.floor((nowMs() - this.sessionStartMs) / 1000);
-      this.lockSurface.update({
-        title: 'Focus active',
-        elapsedSeconds: elapsed,
-      });
+      this.lockSurface.update({ title: 'Focus active', elapsedSeconds: elapsed });
     }, 1000);
   }
 
